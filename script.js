@@ -1,3 +1,4 @@
+
 const config = {
     API_BASE_URL: 'http://localhost:8000',
 };
@@ -143,33 +144,71 @@ async function initHeartHealthPage() {
 // --- HEART HEALTH RENDERERS ---
 
 function renderHeartHealthData(insights) {
-    // Risk Assessment
+    // Clear existing content
+    document.getElementById('risk-assessment-content').innerHTML = '';
+    document.getElementById('ai-summary').innerHTML = '';
+    document.getElementById('personalized-insights').innerHTML = '';
+    document.getElementById('summary-content').innerHTML = '';
+    document.getElementById('training-recs-content').innerHTML = '';
+
+    // Helper to create simple "Key: Value" lines
+    const createSummaryLine = (label, value) => {
+        const p = document.createElement('p');
+        const strong = document.createElement('strong');
+        strong.textContent = `${label}: `;
+        p.appendChild(strong);
+        p.append(value);
+        return p;
+    };
+
+    // --- Risk Assessment ---
     const riskContent = document.getElementById('risk-assessment-content');
     const risk = insights.risk_assessment;
     const riskColor = risk.risk_color === 'green' ? 'green' : (risk.risk_color === 'yellow' ? 'yellow' : 'red');
-    riskContent.innerHTML = `
-        <div class="text-center">
-            <p class="text-5xl font-bold text-${riskColor}-500">${risk.risk_score}</p>
-            <p class="text-lg font-semibold text-${riskColor}-600 bg-${riskColor}-100 rounded-full px-4 py-1 inline-block mt-2">${risk.risk_category}</p>
-        </div>
-        <div class="mt-4">
-            <h4 class="font-semibold text-gray-700">Recommendations:</h4>
-            <ul class="list-disc list-inside text-gray-600 text-sm mt-2 space-y-1">
-                ${risk.recommendations.map(rec => `<li>${rec}</li>`).join('')}
-            </ul>
-        </div>
-    `;
+    
+    const riskDisplay = document.createElement('div');
+    riskDisplay.className = 'text-center';
+    const riskScoreP = document.createElement('p');
+    riskScoreP.className = `text-5xl font-bold text-${riskColor}-500`;
+    riskScoreP.textContent = risk.risk_score;
+    const riskCategoryP = document.createElement('p');
+    riskCategoryP.className = `text-lg font-semibold text-${riskColor}-600 bg-${riskColor}-100 rounded-full px-4 py-1 inline-block mt-2`;
+    riskCategoryP.textContent = risk.risk_category;
+    riskDisplay.append(riskScoreP, riskCategoryP);
+    
+    const recsContainer = document.createElement('div');
+    recsContainer.className = 'mt-4';
+    const recsHeader = document.createElement('h4');
+    recsHeader.className = 'font-semibold text-gray-700';
+    recsHeader.textContent = 'Recommendations:';
+    const recsList = document.createElement('ul');
+    recsList.className = 'list-disc list-inside text-gray-600 text-sm mt-2 space-y-1';
+    risk.recommendations.forEach(rec => {
+        const li = document.createElement('li');
+        li.textContent = rec;
+        recsList.appendChild(li);
+    });
+    recsContainer.append(recsHeader, recsList);
+    riskContent.append(riskDisplay, recsContainer);
+    
+    // --- AI Summary & Explanation ---
+    const aiSummaryContainer = document.getElementById('ai-summary');
+    insights.ai_explanation.split('\n').forEach(paragraphText => {
+        if (!paragraphText.trim()) return;
+        const p = document.createElement('p');
+        p.textContent = paragraphText;
+        aiSummaryContainer.appendChild(p);
+    });
 
-    // AI Summary
-    document.getElementById('ai-summary').innerHTML = `<p>${insights.ai_explanation.replace(/\n/g, '</p><p>')}</p>`;
-
-    // Personalized Insights
+    // --- Personalized Insights ---
     const insightsContainer = document.getElementById('personalized-insights');
-    insightsContainer.innerHTML = insights.personalized_insights.insights.map(insight => {
+    insights.personalized_insights.insights.forEach(insight => {
         const iconColor = insight.type === 'positive' ? 'text-green-500' : 'text-yellow-500';
         const bgColor = insight.type === 'positive' ? 'bg-green-50' : 'bg-yellow-50';
-        return `
-        <div class="flex items-start space-x-4 p-4 ${bgColor} rounded-lg">
+        
+        const wrapper = document.createElement('div');
+        wrapper.className = `flex items-start space-x-4 p-4 ${bgColor} rounded-lg`;
+        wrapper.innerHTML = `
             <div>
                 <svg class="w-6 h-6 ${iconColor}" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
             </div>
@@ -178,31 +217,43 @@ function renderHeartHealthData(insights) {
                 <p class="text-gray-600 text-sm">${insight.message}</p>
                 <p class="text-gray-500 text-xs mt-1"><em>Recommendation: ${insight.recommendation}</em></p>
             </div>
-        </div>
         `;
-    }).join('');
+        insightsContainer.appendChild(wrapper);
+    });
 
-    // Summary Content
+    // --- Data Summary ---
+    const summaryContent = document.getElementById('summary-content');
     const summary = insights.summary;
-    document.getElementById('summary-content').innerHTML = `
-        <p><strong>Fitness Level:</strong> <span class="font-medium text-blue-600">${summary.current_fitness_level}</span></p>
-        <p><strong>Data Completeness:</strong> ${summary.data_completeness}%</p>
-        <p><strong>Last Updated:</strong> ${new Date(summary.last_updated).toLocaleString()}</p>
-    `;
+    const fitnessP = document.createElement('p');
+    fitnessP.innerHTML = `<strong>Fitness Level:</strong> <span class="font-medium text-blue-600">${summary.current_fitness_level}</span>`;
+    summaryContent.append(
+        fitnessP,
+        createSummaryLine('Data Completeness', `${summary.data_completeness}%`),
+        createSummaryLine('Last Updated', new Date(summary.last_updated).toLocaleString())
+    );
 
-    // Training Recommendations
+    // --- Training Recommendations ---
+    const trainingContent = document.getElementById('training-recs-content');
     const training = insights.training_recommendations;
-    document.getElementById('training-recs-content').innerHTML = `
-        <p><strong>Recommendation:</strong> ${training.recommendation}</p>
-        <p><strong>Intensity:</strong> ${training.intensity}</p>
-        <p><strong>Frequency:</strong> ${training.frequency}</p>
-        <p><strong>Duration:</strong> ${training.duration}</p>
-        <p><strong>Focus Zones:</strong></p>
-        <div class="flex flex-wrap gap-2 mt-1">
-            ${training.zones_to_focus.map(zone => `<span class="bg-gray-200 text-gray-800 text-xs font-semibold mr-2 px-2.5 py-0.5 rounded-full">${zone.replace(/_/g, ' ')}</span>`).join('')}
-        </div>
-    `;
+    trainingContent.append(
+        createSummaryLine('Recommendation', training.recommendation),
+        createSummaryLine('Intensity', training.intensity),
+        createSummaryLine('Frequency', training.frequency),
+        createSummaryLine('Duration', training.duration)
+    );
+    const zonesP = document.createElement('p');
+    zonesP.innerHTML = '<strong>Focus Zones:</strong>';
+    const zonesContainer = document.createElement('div');
+    zonesContainer.className = 'flex flex-wrap gap-2 mt-1';
+    training.zones_to_focus.forEach(zone => {
+        const span = document.createElement('span');
+        span.className = 'bg-gray-200 text-gray-800 text-xs font-semibold mr-2 px-2.5 py-0.5 rounded-full';
+        span.textContent = zone.replace(/_/g, ' ');
+        zonesContainer.appendChild(span);
+    });
+    trainingContent.append(zonesP, zonesContainer);
 }
+
 
 function renderTimeseriesImage(base64Image) {
     const img = document.getElementById('timeseries-image');
@@ -210,5 +261,6 @@ function renderTimeseriesImage(base64Image) {
         img.src = `data:image/png;base64,${base64Image}`;
     } else {
         img.alt = 'No timeseries image available.';
+        img.style.display = 'none'; // Hide if no image
     }
 }
