@@ -13,7 +13,6 @@ document.addEventListener('DOMContentLoaded', () => {
     renderHeader();
 
     // Route to the appropriate page initializer.
-    // The index page is public, all others require authentication.
     switch (path) {
         case 'index.html':
             initIndexPage();
@@ -47,10 +46,13 @@ function navigateTo(page) {
 }
 
 /**
- * Checks if user data exists in sessionStorage. If not, redirects to the index page.
+ * Checks if user data exists or if a new upload just occurred. 
+ * If not, redirects to the index page.
  */
 function checkAuth() {
-    if (!sessionStorage.getItem('uploadData')) {
+    const hasData = sessionStorage.getItem('uploadData');
+    const isNew = sessionStorage.getItem('isNewUpload');
+    if (!hasData && isNew !== 'true') {
         navigateTo('index.html');
     }
 }
@@ -114,247 +116,294 @@ function renderMessage(text, type = 'danger') {
     }
 }
 
-// --- PAGE INITIALIZERS ---
+function renderDashboardSummary(records) {
+    const fileName = sessionStorage.getItem('fileName');
+    document.getElementById('file-name').textContent = fileName || 'N/A';
 
-function initIndexPage() {
-    // If user is already logged in, redirect them to the dashboard.
-    if (sessionStorage.getItem('uploadData')) {
-        navigateTo('dashboard.html');
+    if (!records || records.length === 0) {
+        document.getElementById('record-count').textContent = '0';
+        document.getElementById('date-range').textContent = 'N/A';
         return;
     }
-    
-    const form = document.getElementById('upload-form');
-    if (form) {
-        form.addEventListener('submit', handleUpload);
-    }
-}
 
-function initDashboardPage() {
-    const uploadData = JSON.parse(sessionStorage.getItem('uploadData'));
-    if (!uploadData) return;
+    document.getElementById('record-count').textContent = records.length;
 
-    document.getElementById('file-name').textContent = uploadData.file_name || 'N/A';
-    document.getElementById('record-count').textContent = uploadData.record_count || 'N/A';
-    document.getElementById('date-range').textContent = uploadData.date_range || 'N/A';
-    
-    renderRawDataTable(uploadData.records);
-}
+    let minDate = null;
+    let maxDate = null;
 
-function initHeartHealthPage() {
-    fetchInsights('HeartHealth');
-    const uploadData = JSON.parse(sessionStorage.getItem('uploadData'));
-    const heartRateData = uploadData.records
-        .filter(r => r.type === 'HeartRate' && r.value)
-        .map(r => ({ x: new Date(r.date), y: parseInt(r.value, 10) }));
-    renderTimeSeriesChart('heartRateChart', 'Heart Rate', heartRateData, 'count/min');
-}
-
-function initSleepHealthPage() {
-    fetchInsights('SleepHealth');
-    const uploadData = JSON.parse(sessionStorage.getItem('uploadData'));
-    const sleepData = processSleepData(uploadData.records);
-    renderBarChart('sleepChart', 'Sleep Duration', sleepData, 'Hours');
-}
-
-
-// --- API & DATA HANDLING ---
-
-async function handleUpload(event) {
-    event.preventDefault();
-    const form = event.target;
-    const fileInput = document.getElementById('file-input');
-    const file = fileInput.files[0];
-    const submitBtnText = document.getElementById('upload-btn-text');
-    const spinner = document.getElementById('upload-spinner');
-
-    if (!file) {
-        renderMessage('Please select a file first.');
-        return;
-    }
-    
-    submitBtnText.textContent = 'Uploading...';
-    spinner.classList.remove('d-none');
-    form.querySelector('button').disabled = true;
-
-    const formData = new FormData();
-    formData.append('file', file);
-
-    try {
-        const response = await fetch(`${API_BASE_URL}/upload`, {
-            method: 'POST',
-            body: formData,
+    records.forEach(r => {
+        const recordDates = [r.date, r.startDate, r.endDate].filter(Boolean).map(d => new Date(d));
+        recordDates.forEach(date => {
+            if (!isNaN(date.getTime())) { // Ensure date is valid
+                if (minDate === null || date < minDate) {
+                    minDate = date;
+                }
+                if (maxDate === null || date > maxDate) {
+                    maxDate = date;
+                }
+            }
         });
+    });
 
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ detail: 'An unknown server error occurred.' }));
-            throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
-        }
-        
-        const data = await response.json();
-        sessionStorage.setItem('uploadData', JSON.stringify(data));
-        navigateTo('dashboard.html');
-
-    } catch (error) {
-        renderMessage(`Upload failed: ${error.message}`);
-    } finally {
-        submitBtnText.textContent = 'Upload and Analyze';
-        spinner.classList.add('d-none');
-        form.querySelector('button').disabled = false;
+    if (minDate && maxDate) {
+        const options = { year: 'numeric', month: 'short', day: 'numeric' };
+        document.getElementById('date-range').textContent = 
+            `${minDate.toLocaleDateString(undefined, options)} - ${maxDate.toLocaleDateString(undefined, options)}`;
+    } else {
+        document.getElementById('date-range').textContent = 'No valid dates found';
     }
-}
-
-async function fetchInsights(metricType) {
-    const insightsContainer = document.getElementById('insights-container');
-    const summaryContainer = document.getElementById('insights-summary-container');
-
-    // Set loading state
-    insightsContainer.innerHTML = `
-        <div class="col-12 text-center p-5">
-            <div class="spinner-border text-primary" role="status">
-                <span class="visually-hidden">Loading Insights...</span>
-            </div>
-            <p class="mt-2">Analyzing your data...</p>
-        </div>`;
-    
-    try {
-        const response = await fetch(`${API_BASE_URL}/metrics/insights?metrics=${metricType}`);
-        if (!response.ok) throw new Error('Failed to load insights from the server.');
-        
-        const result = await response.json();
-        renderInsights(result.insights, insightsContainer, summaryContainer);
-
-    } catch (error) {
-        insightsContainer.innerHTML = `<div class="col"><div class="alert alert-danger">${error.message}</div></div>`;
-        if (summaryContainer) summaryContainer.innerHTML = '';
-    }
-}
-
-
-function renderInsights(insights, container, summaryContainer) {
-    container.innerHTML = ''; // Clear spinner
-    
-    if (!insights) {
-        container.innerHTML = `<div class="col"><div class="alert alert-warning">No insights could be generated.</div></div>`;
-        return;
-    }
-
-    // Render Summary Card
-    if (insights.summary && summaryContainer) {
-        const riskColor = insights.risk_assessment?.risk_color || 'secondary';
-        const riskCategory = insights.risk_assessment?.risk_category || 'N/A';
-        summaryContainer.innerHTML = `
-        <div class="card bg-dark-2 border-secondary mb-4 risk-color-${riskColor}">
-            <div class="card-header"><strong>Summary</strong></div>
-            <div class="card-body">
-                <p class="mb-2"><strong>Fitness Level:</strong> ${insights.summary.current_fitness_level || 'N/A'}</p>
-                <p class="mb-2"><strong>Risk Category:</strong> <span class="fw-bold text-${riskColor}">${riskCategory}</span></p>
-                <p class="mb-0"><strong>Last Updated:</strong> ${new Date(insights.summary.last_updated).toLocaleDateString()}</p>
-            </div>
-        </div>`;
-    }
-
-    // AI Summary & Explanation
-    if (insights.ai_summary) {
-        container.innerHTML += createInsightCard('AI Summary', insights.ai_summary.replace(/\n/g, '<br>'), 'bi-robot');
-    }
-    if (insights.ai_explanation) {
-        container.innerHTML += createInsightCard('AI Explanation', insights.ai_explanation, 'bi-lightbulb-fill');
-    }
-    
-    // Recommendations
-    if (insights.risk_assessment?.recommendations?.length) {
-         container.innerHTML += createListCard('Recommendations', insights.risk_assessment.recommendations, 'bi-check2-circle');
-    }
-}
-
-function createInsightCard(title, content, icon) {
-    return `
-    <div class="col-md-6 mb-4">
-        <div class="card bg-dark-2 border-secondary h-100">
-            <div class="card-header">
-                <h5><i class="bi ${icon} me-2 text-primary"></i>${title}</h5>
-            </div>
-            <div class="card-body">
-                <p class="card-text">${content}</p>
-            </div>
-        </div>
-    </div>`;
-}
-
-function createListCard(title, items, icon) {
-     return `
-    <div class="col-md-6 mb-4">
-        <div class="card bg-dark-2 border-secondary h-100">
-            <div class="card-header">
-                <h5><i class="bi ${icon} me-2 text-primary"></i>${title}</h5>
-            </div>
-            <div class="card-body">
-                <ul class="list-group list-group-flush">
-                    ${items.map(item => `<li class="list-group-item bg-transparent border-secondary">${item}</li>`).join('')}
-                </ul>
-            </div>
-        </div>
-    </div>`;
 }
 
 function renderRawDataTable(records) {
     const container = document.getElementById('raw-data-table');
+    if (!container) return;
+
     if (!records || records.length === 0) {
-        container.innerHTML = '<p class="text-center p-4">No records found in the uploaded file.</p>';
+        container.innerHTML = '<p class="text-center p-3">No data to display.</p>';
         return;
     }
 
-    const previewRecords = records.slice(0, 50);
+    // Take a small sample for preview
+    const sample = records.slice(0, 100);
+    
+    // Dynamically create headers from the first record
+    const headers = Object.keys(sample[0]);
 
     const table = `
         <table class="table table-dark table-striped table-hover">
             <thead>
                 <tr>
-                    <th scope="col">Type</th>
-                    <th scope="col">Value</th>
-                    <th scope="col">Date</th>
+                    ${headers.map(h => `<th>${h}</th>`).join('')}
                 </tr>
             </thead>
             <tbody>
-                ${previewRecords.map(r => `
+                ${sample.map(row => `
                     <tr>
-                        <td>${r.type}</td>
-                        <td>${r.value || (r.endDate ? 'Duration' : 'N/A')}</td>
-                        <td>${new Date(r.date || r.startDate).toLocaleString()}</td>
+                        ${headers.map(h => `<td>${row[h] !== null ? row[h] : ''}</td>`).join('')}
                     </tr>
                 `).join('')}
             </tbody>
         </table>
-        ${records.length > 50 ? `<p class="text-muted text-center mt-2">Showing the first 50 of ${records.length} total records.</p>`: ''}
+        ${records.length > 100 ? `<p class="text-muted text-center mt-2">Showing first 100 of ${records.length} records.</p>` : ''}
     `;
+
     container.innerHTML = table;
 }
 
-// --- CHARTING ---
+// --- PAGE INITIALIZERS ---
 
-Chart.defaults.color = '#ccc';
-Chart.defaults.borderColor = '#444';
-
-function renderTimeSeriesChart(canvasId, label, data, unit) {
-    const ctx = document.getElementById(canvasId);
-    if (!ctx) return;
-    if (!data || data.length === 0) {
-        ctx.parentElement.innerHTML = `<div class="d-flex align-items-center justify-content-center h-100 text-muted p-5">No data available to display chart.</div>`;
+function initIndexPage() {
+    if (sessionStorage.getItem('uploadData')) {
+        navigateTo('dashboard.html');
         return;
     }
+
+    const form = document.getElementById('upload-form');
+    const fileInput = document.getElementById('file-input');
+    const uploadBtnText = document.getElementById('upload-btn-text');
+    const uploadSpinner = document.getElementById('upload-spinner');
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        if (!fileInput.files || fileInput.files.length === 0) {
+            renderMessage('Please select a file to upload.', 'warning');
+            return;
+        }
+
+        uploadBtnText.classList.add('d-none');
+        uploadSpinner.classList.remove('d-none');
+        form.querySelector('button').disabled = true;
+        renderMessage('', 'info'); // Clear previous messages
+
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/upload`, {
+                method: 'POST',
+                body: formData,
+            });
+
+            const result = await response.json();
+
+            if (!response.ok || result.status !== 'success') {
+                throw new Error(result.message || result.detail || 'File upload failed.');
+            }
+            
+            // On success, don't store data yet. Set a flag to fetch it on the dashboard.
+            sessionStorage.setItem('fileName', fileInput.files[0].name);
+            sessionStorage.setItem('isNewUpload', 'true');
+            sessionStorage.removeItem('uploadData'); // Clear any old data
+            
+            navigateTo('dashboard.html');
+
+        } catch (error) {
+            renderMessage(error.message, 'danger');
+        } finally {
+            uploadBtnText.classList.remove('d-none');
+            uploadSpinner.classList.add('d-none');
+            form.querySelector('button').disabled = false;
+        }
+    });
+}
+
+async function initDashboardPage() {
+    const isNewUpload = sessionStorage.getItem('isNewUpload');
+    let rawData = JSON.parse(sessionStorage.getItem('uploadData'));
+
+    const dataTableContainer = document.getElementById('raw-data-table');
     
+    // If data already exists in session, just render it.
+    if (rawData) {
+        renderDashboardSummary(rawData);
+        renderRawDataTable(rawData);
+        return;
+    }
+
+    // If it's a new upload, fetch data from the server.
+    if (isNewUpload === 'true') {
+        sessionStorage.removeItem('isNewUpload'); // Remove flag to prevent re-fetching
+
+        try {
+            // Assumes a GET /records endpoint exists to fetch data post-upload.
+            const response = await fetch(`${API_BASE_URL}/records`);
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ detail: 'Could not fetch health data.' }));
+                throw new Error(errorData.detail);
+            }
+            
+            const fetchedData = await response.json();
+            // API could return {records: [...]} or just [...]
+            rawData = fetchedData.records || fetchedData;
+
+            if (!Array.isArray(rawData)) {
+                throw new Error("Fetched data is not in the expected format (array of records).");
+            }
+
+            sessionStorage.setItem('uploadData', JSON.stringify(rawData));
+            
+            renderDashboardSummary(rawData);
+            renderRawDataTable(rawData);
+
+        } catch (error) {
+            console.error("Failed to fetch data for dashboard:", error);
+            dataTableContainer.innerHTML = `<div class="alert alert-danger mx-3"><strong>Error loading data:</strong> ${error.message}. Please try uploading the file again.</div>`;
+            document.getElementById('file-name').textContent = sessionStorage.getItem('fileName') || 'Error';
+            document.getElementById('record-count').textContent = 'Error';
+            document.getElementById('date-range').textContent = 'Error';
+        }
+    } else {
+        // This case should be handled by checkAuth(), but as a safeguard.
+        checkAuth();
+    }
+}
+
+
+function initHeartHealthPage() {
+    const rawData = JSON.parse(sessionStorage.getItem('uploadData'));
+    if (!rawData) return;
+    
+    renderHeartRateChart(rawData);
+    fetchAndRenderInsights('HeartHealth');
+}
+
+function initSleepHealthPage() {
+    const rawData = JSON.parse(sessionStorage.getItem('uploadData'));
+    if (!rawData) return;
+
+    renderSleepChart(rawData);
+    fetchAndRenderInsights('SleepHealth');
+}
+
+
+// --- INSIGHTS & CHARTS ---
+
+async function fetchAndRenderInsights(metric) {
+    const insightsContainer = document.getElementById('insights-container');
+    const summaryContainer = document.getElementById('insights-summary-container');
+    if (!insightsContainer || !summaryContainer) return;
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/metrics/insights?metric=${metric}`);
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ detail: `Could not fetch ${metric} insights.` }));
+            throw new Error(errorData.detail);
+        }
+        const data = await response.json();
+        
+        // Render Summary Card
+        const summary = data.insights.summary;
+        const risk = data.insights.risk_assessment;
+        summaryContainer.innerHTML = `
+            <div class="card bg-dark-2 border-secondary risk-color-${risk.risk_color || 'green'}">
+                <div class="card-header">At a Glance</div>
+                <div class="card-body">
+                    <h5 class="card-title">${risk.risk_category}</h5>
+                    <p class="card-text">Current Fitness Level: <strong>${summary.current_fitness_level}</strong></p>
+                    <p class="text-muted small">Last updated: ${new Date(summary.last_updated).toLocaleDateString()}</p>
+                </div>
+            </div>
+        `;
+
+        // Render Detailed Insights
+        insightsContainer.innerHTML = `
+            <div class="col-md-6 mb-4">
+                <div class="card bg-dark-2 border-secondary h-100">
+                    <div class="card-header">AI Explanation</div>
+                    <div class="card-body">
+                        <p>${data.insights.ai_explanation.replace(/\n/g, '<br>')}</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6 mb-4">
+                <div class="card bg-dark-2 border-secondary h-100">
+                    <div class="card-header">Recommendations</div>
+                    <div class="card-body">
+                        <ul class="list-unstyled">
+                            ${risk.recommendations.map(rec => `<li><i class="bi bi-check-circle-fill text-success me-2"></i>${rec}</li>`).join('')}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        `;
+
+
+    } catch (error) {
+        insightsContainer.innerHTML = `<div class="col-12"><div class="alert alert-warning">${error.message}</div></div>`;
+        summaryContainer.innerHTML = '';
+    }
+}
+
+
+function renderHeartRateChart(records) {
+    const ctx = document.getElementById('heartRateChart');
+    if (!ctx) return;
+
+    const heartRateData = records
+        .filter(r => r.type === 'HeartRate')
+        .map(r => ({
+            x: new Date(r.date),
+            y: r.value
+        }))
+        .sort((a, b) => a.x - b.x);
+    
+    if (heartRateData.length === 0) {
+        ctx.parentElement.innerHTML = '<p class="text-center my-auto">No heart rate data available to display.</p>';
+        return;
+    }
+
     new Chart(ctx, {
         type: 'line',
         data: {
             datasets: [{
-                label: label,
-                data: data,
-                borderColor: 'rgba(13, 110, 253, 0.8)',
-                backgroundColor: 'rgba(13, 110, 253, 0.2)',
-                fill: true,
-                tension: 0.3,
-                pointRadius: 0,
-                pointHoverRadius: 5
+                label: 'Heart Rate (bpm)',
+                data: heartRateData,
+                borderColor: 'rgba(255, 99, 132, 0.8)',
+                backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                borderWidth: 1,
+                pointRadius: 1,
+                tension: 0.4
             }]
         },
         options: {
@@ -363,97 +412,84 @@ function renderTimeSeriesChart(canvasId, label, data, unit) {
             scales: {
                 x: {
                     type: 'time',
-                    time: { unit: 'day', tooltipFormat: 'MMM dd, yyyy HH:mm' },
-                    grid: { display: false },
-                    ticks: { color: '#888' }
+                    time: {
+                        unit: 'day'
+                    },
+                    grid: { color: 'rgba(255, 255, 255, 0.1)' }
                 },
                 y: {
                     beginAtZero: false,
-                    title: { display: true, text: unit, color: '#aaa' },
-                    ticks: { color: '#888' }
+                    grid: { color: 'rgba(255, 255, 255, 0.1)' }
                 }
-            },
-            plugins: {
-                legend: { display: false },
-                tooltip: { mode: 'index', intersect: false }
-            },
-            interaction: {
-                mode: 'nearest',
-                axis: 'x',
-                intersect: false
             }
         }
     });
 }
 
-function renderBarChart(canvasId, label, data, unit) {
-    const ctx = document.getElementById(canvasId);
+function renderSleepChart(records) {
+    const ctx = document.getElementById('sleepChart');
     if (!ctx) return;
-    if (!data || data.length === 0) {
-        ctx.parentElement.innerHTML = `<div class="d-flex align-items-center justify-content-center h-100 text-muted p-5">No data available to display chart.</div>`;
+
+    const sleepData = records
+        .filter(r => r.type === 'SleepAnalysis' && r.value.includes('Asleep'))
+        .map(r => {
+            const startDate = new Date(r.startDate);
+            const endDate = new Date(r.endDate);
+            const durationHours = (endDate - startDate) / (1000 * 60 * 60);
+            // Assign sleep to the night it started on
+            const sleepDate = new Date(startDate);
+            if (sleepDate.getHours() < 12) { // If sleep started after midnight, attribute to previous day
+                sleepDate.setDate(sleepDate.getDate() - 1);
+            }
+            return { date: sleepDate, duration: durationHours };
+        });
+
+    if (sleepData.length === 0) {
+        ctx.parentElement.innerHTML = '<p class="text-center my-auto">No sleep data available to display.</p>';
         return;
     }
+    
+    // Group sleep by day
+    const dailySleep = sleepData.reduce((acc, curr) => {
+        const dateString = curr.date.toISOString().split('T')[0];
+        acc[dateString] = (acc[dateString] || 0) + curr.duration;
+        return acc;
+    }, {});
+
+    const chartData = Object.keys(dailySleep)
+        .map(date => ({
+            x: new Date(date),
+            y: dailySleep[date]
+        }))
+        .sort((a, b) => a.x - b.x)
+        .slice(-30); // Show last 30 nights
 
     new Chart(ctx, {
         type: 'bar',
         data: {
-            labels: data.map(d => d.x),
             datasets: [{
-                label: label,
-                data: data.map(d => d.y),
-                backgroundColor: 'rgba(13, 110, 253, 0.6)',
-                borderColor: 'rgba(13, 110, 253, 1)',
-                borderWidth: 1,
-                borderRadius: 4
+                label: 'Sleep Duration (hours)',
+                data: chartData,
+                backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                borderColor: 'rgba(54, 162, 235, 1)',
+                borderWidth: 1
             }]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
             scales: {
+                x: {
+                    type: 'time',
+                    time: { unit: 'day' },
+                    grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                },
                 y: {
                     beginAtZero: true,
-                    title: { display: true, text: unit, color: '#aaa' },
-                    ticks: { color: '#888' }
-                },
-                x: {
-                    ticks: { color: '#888' },
-                    grid: { display: false }
+                    title: { display: true, text: 'Hours' },
+                    grid: { color: 'rgba(255, 255, 255, 0.1)' }
                 }
-            },
-            plugins: {
-                legend: { display: false }
             }
         }
     });
-}
-
-function processSleepData(records) {
-    const sleepRecords = records.filter(r => r.type === 'SleepAnalysis' && r.value === 'asleep');
-    const sleepByNight = {};
-
-    sleepRecords.forEach(r => {
-        const startDate = new Date(r.startDate);
-        const endDate = new Date(r.endDate);
-        const duration = (endDate - startDate) / (1000 * 60 * 60); // in hours
-
-        // Attribute sleep to the date the sleep period *started* on.
-        // If sleep starts after midnight (e.g., 1 AM), attribute it to the previous calendar day's "night".
-        const night = new Date(startDate);
-        if (startDate.getHours() < 12) {
-           night.setDate(night.getDate() - 1);
-        }
-        night.setHours(0, 0, 0, 0); 
-        const nightKey = night.toISOString().split('T')[0];
-
-        if (!sleepByNight[nightKey]) {
-            sleepByNight[nightKey] = 0;
-        }
-        sleepByNight[nightKey] += duration;
-    });
-
-    return Object.entries(sleepByNight)
-        .map(([date, hours]) => ({ x: date, y: parseFloat(hours.toFixed(2)) }))
-        .sort((a, b) => new Date(a.x) - new Date(b.x))
-        .slice(-30); // Show only the last 30 nights for clarity
 }
