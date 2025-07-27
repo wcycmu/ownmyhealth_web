@@ -121,7 +121,7 @@ async function initHeartHealthPage() {
     try {
         const [insightsData, timeseriesData] = await Promise.all([
             fetch(`${config.API_BASE_URL}/metrics/insights?metrics=HeartHealth`).then(res => res.json()),
-            fetch(`${config.API_BASE_URL}/metrics/timeseries?metrics=HeartHealth&decompose=false`).then(res => res.json())
+            fetch(`${config.API_BASE_URL}/metrics/timeseries?metrics=HeartRate&decompose=false`).then(res => res.json())
         ]);
         
         if (insightsData.error || timeseriesData.error) {
