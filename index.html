@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload - OwnMyHealth</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="/index.css">
+</head>
+<body class="bg-dark text-light">
+
+    <div id="app-header"></div>
+
+    <main class="container mt-5">
+        <div class="row justify-content-center">
+            <div class="col-md-8 col-lg-6">
+                <div class="card bg-dark-2 border-secondary shadow-lg">
+                    <div class="card-body p-5">
+                        <h1 class="card-title text-center mb-4 h3">Select your Apple Health export.xml file to begin.</h1>
+                        <form id="upload-form">
+                            <div class="mb-3">
+                                <input class="form-control" type="file" id="file-input" accept=".xml" required>
+                            </div>
+                            <div class="d-grid">
+                                <button type="submit" class="btn btn-primary btn-lg">
+                                    <span id="upload-btn-text">
+                                        <i class="bi bi-cloud-arrow-up-fill me-2"></i>Upload and Analyze
+                                    </span>
+                                    <div id="upload-spinner" class="spinner-border spinner-border-sm d-none" role="status">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </div>
+                                </button>
+                            </div>
+                        </form>
+                        <div id="message-area" class="mt-4 text-center"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="script.js"></script>
+<script type="module" src="/index.tsx"></script>
+</body>
+</html>
