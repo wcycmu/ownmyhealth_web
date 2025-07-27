@@ -60,6 +60,8 @@ function renderHeader() {
 
 function initUploadPage() {
     const form = document.getElementById('upload-form');
+    if (!form) return;
+
     const submitButton = document.getElementById('submit-button');
     const buttonText = document.getElementById('button-text');
     const spinner = document.getElementById('spinner');
@@ -118,7 +120,8 @@ async function initHeartHealthPage() {
     try {
         const [insightsData, timeseriesData] = await Promise.all([
             fetch(`${config.API_BASE_URL}/metrics/insights?metrics=HeartHealth`).then(res => res.json()),
-            fetch(`${config.API_...
+            fetch(`${config.API_BASE_URL}/metrics/timeseries?metrics=HeartHealth`).then(res => res.json())
+        ]);
         
         if (insightsData.error || timeseriesData.error) {
             throw new Error(insightsData.error || timeseriesData.error || 'Failed to fetch data.');
