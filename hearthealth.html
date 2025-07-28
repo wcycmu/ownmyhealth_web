@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -29,10 +30,19 @@
                     <div id="ai-summary" class="prose max-w-none text-gray-600"></div>
                 </div>
 
-                <!-- Timeseries Chart -->
+                <!-- Timeseries Charts -->
                 <div class="card">
                     <h3 class="card-title">Heart Rate Timeseries</h3>
-                    <img id="timeseries-image" src="" alt="Heart health timeseries chart" class="w-full h-auto rounded-md shadow-sm mt-4"/>
+                    <div id="timeseries-images-container" class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+                        <div>
+                            <h4 class="font-semibold text-gray-700 text-center mb-2">Overall Heart Rate</h4>
+                            <img id="heartrate-timeseries-image" src="" alt="Heart rate timeseries chart" class="w-full h-auto rounded-md shadow-sm"/>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold text-gray-700 text-center mb-2">Resting Heart Rate</h4>
+                            <img id="resting-heartrate-timeseries-image" src="" alt="Resting heart rate timeseries chart" class="w-full h-auto rounded-md shadow-sm"/>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Personalized Insights -->

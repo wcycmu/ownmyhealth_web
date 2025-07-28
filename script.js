@@ -1,4 +1,6 @@
 
+
+
 const config = {
     API_BASE_URL: 'http://localhost:8000',
 };
@@ -119,17 +121,19 @@ async function initHeartHealthPage() {
     const errorMsg = document.getElementById('error-message');
 
     try {
-        const [insightsData, timeseriesData] = await Promise.all([
+        const [insightsData, heartRateTimeseriesData, restingHeartRateTimeseriesData] = await Promise.all([
             fetch(`${config.API_BASE_URL}/metrics/insights?metrics=HeartHealth`).then(res => res.json()),
-            fetch(`${config.API_BASE_URL}/metrics/timeseries?metric=HeartRate&decompose=false`).then(res => res.json())
+            fetch(`${config.API_BASE_URL}/metrics/timeseries?metrics=HeartRate&decompose=false`).then(res => res.json()),
+            fetch(`${config.API_BASE_URL}/metrics/timeseries?metrics=RestingHeartRate&decompose=false`).then(res => res.json())
         ]);
         
-        if (insightsData.error || timeseriesData.error) {
-            throw new Error(insightsData.error || timeseriesData.error || 'Failed to fetch data.');
+        const error = insightsData.error || heartRateTimeseriesData.error || restingHeartRateTimeseriesData.error;
+        if (error) {
+            throw new Error(error || 'Failed to fetch data.');
         }
 
         renderHeartHealthData(insightsData.insights);
-        renderTimeseriesImage(timeseriesData.image_base64);
+        renderTimeseriesImages(heartRateTimeseriesData.image_base64, restingHeartRateTimeseriesData.image_base64);
 
         content.classList.remove('hidden');
     } catch (error) {
@@ -255,12 +259,27 @@ function renderHeartHealthData(insights) {
 }
 
 
-function renderTimeseriesImage(base64Image) {
-    const img = document.getElementById('timeseries-image');
-    if (base64Image) {
-        img.src = `data:image/png;base64,${base64Image}`;
-    } else {
-        img.alt = 'No timeseries image available.';
-        img.style.display = 'none'; // Hide if no image
+function renderTimeseriesImages(heartRateBase64, restingHeartRateBase64) {
+    const hrImg = document.getElementById('heartrate-timeseries-image');
+    const restingHrImg = document.getElementById('resting-heartrate-timeseries-image');
+
+    if (hrImg) {
+        if (heartRateBase64) {
+            hrImg.src = `data:image/png;base64,${heartRateBase64}`;
+            hrImg.style.display = 'block';
+        } else {
+            hrImg.alt = 'No heart rate image available.';
+            hrImg.style.display = 'none'; // Hide if no image
+        }
+    }
+
+    if (restingHrImg) {
+        if (restingHeartRateBase64) {
+            restingHrImg.src = `data:image/png;base64,${restingHeartRateBase64}`;
+            restingHrImg.style.display = 'block';
+        } else {
+            restingHrImg.alt = 'No resting heart rate image available.';
+            restingHrImg.style.display = 'none'; // Hide if no image
+        }
     }
 }
