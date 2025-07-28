@@ -123,8 +123,8 @@ async function initHeartHealthPage() {
     try {
         const [insightsData, heartRateTimeseriesData, restingHeartRateTimeseriesData] = await Promise.all([
             fetch(`${config.API_BASE_URL}/metrics/insights?metrics=HeartHealth`).then(res => res.json()),
-            fetch(`${config.API_BASE_URL}/metrics/timeseries?metrics=HeartRate&decompose=false`).then(res => res.json()),
-            fetch(`${config.API_BASE_URL}/metrics/timeseries?metrics=RestingHeartRate&decompose=false`).then(res => res.json())
+            fetch(`${config.API_BASE_URL}/metrics/timeseries?metric=HeartRate&decompose=false`).then(res => res.json()),
+            fetch(`${config.API_BASE_URL}/metrics/timeseries?metric=RestingHeartRate&decompose=false`).then(res => res.json())
         ]);
         
         const error = insightsData.error || heartRateTimeseriesData.error || restingHeartRateTimeseriesData.error;
